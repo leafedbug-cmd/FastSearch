@@ -70,31 +70,39 @@ class WatchService:
         if self._on_status:
             self._on_status(msg)
 
-    def _initial_scan(self) -> None:
+    def _scan_root(self, root: Path) -> None:
         scanned = 0
-        self._emit_status("Indexing…")
-        for root in self.cfg.roots:
-            for dirpath, dirnames, filenames in os_walk_filtered(root, self.cfg.exclude_dir_names):
-                for fn in filenames:
-                    p = Path(dirpath) / fn
-                    self.repo.upsert_file(p, self.cfg.roots)
-                    scanned += 1
-                    if scanned % 500 == 0:
-                        self._emit_status(f"Indexing… {scanned} files")
-                    if self._stop_event.is_set():
-                        return
-        self._emit_status(f"Indexing complete ({scanned} files)")
+        self._emit_status(f"Indexing {root}…")
+        # ensure progress entry exists
+        self.repo.update_location_scan_state(str(root), complete=False, last_scan_count=0)
+        for dirpath, dirnames, filenames in os_walk_filtered(root, self.cfg.exclude_dir_names):
+            for fn in filenames:
+                p = Path(dirpath) / fn
+                self.repo.upsert_file(p, self.cfg.roots)
+                scanned += 1
+                if scanned % 500 == 0:
+                    self.repo.update_location_scan_state(str(root), last_scan_count=scanned)
+                    self._emit_status(f"Indexing {root}… {scanned} files")
+                if self._stop_event.is_set():
+                    return
+        self.repo.update_location_scan_state(str(root), complete=True, last_scan_count=scanned)
+        self._emit_status(f"Indexing complete for {root} ({scanned} files)")
 
     def start(self) -> None:
-        # Possibly skip initial scan if index exists for these roots
-        if self.cfg.skip_initial_if_index_present:
+        # Possibly skip scanning completed roots; resume incomplete ones
+        to_scan: List[Path] = []
+        for root in self.cfg.roots:
+            complete = self.repo.is_initial_scan_complete(str(root)) if self.cfg.skip_initial_if_index_present else False
+            if not complete:
+                to_scan.append(root)
+        if not to_scan and self.cfg.skip_initial_if_index_present:
             existing = self.repo.count_docs_for_location_paths([str(p) for p in self.cfg.roots])
-            if existing > 0:
-                self._emit_status(f"Loaded index ({existing} files)")
-            else:
-                self._initial_scan()
+            self._emit_status(f"Loaded index ({existing} files)")
         else:
-            self._initial_scan()
+            for root in to_scan:
+                if self._stop_event.is_set():
+                    break
+                self._scan_root(root)
 
         # Start observers
         handler = _Handler(self.repo, self.cfg.roots)

@@ -40,4 +40,19 @@ def initialize(db_path: Path | str = DB_PATH) -> None:
     with connect(db_path) as con:
         with open(schema_path, "r", encoding="utf-8") as f:
             con.executescript(f.read())
+        _migrate(con)
 
+
+def _migrate(con: sqlite3.Connection) -> None:
+    # Add columns to locations for scan state if missing
+    cur = con.execute("PRAGMA table_info(locations)")
+    cols = {row[1] for row in cur.fetchall()}  # name is at index 1
+    to_add = []
+    if "initial_scan_complete" not in cols:
+        to_add.append("ALTER TABLE locations ADD COLUMN initial_scan_complete INTEGER NOT NULL DEFAULT 0")
+    if "last_scan_ts" not in cols:
+        to_add.append("ALTER TABLE locations ADD COLUMN last_scan_ts INTEGER NOT NULL DEFAULT 0")
+    if "last_scan_count" not in cols:
+        to_add.append("ALTER TABLE locations ADD COLUMN last_scan_count INTEGER NOT NULL DEFAULT 0")
+    for stmt in to_add:
+        con.execute(stmt)

@@ -88,7 +88,7 @@ class DocsRepo:
         row = cur.fetchone()
         if row:
             return int(row[0])
-        cur = con.execute("INSERT INTO locations(path) VALUES(?)", (path,))
+        cur = con.execute("INSERT INTO locations(path, initial_scan_complete, last_scan_ts, last_scan_count) VALUES(?, 0, 0, 0)", (path,))
         return int(cur.lastrowid)
 
     def upsert_file(self, path: Path, root_locations: Sequence[Path]) -> Optional[int]:
@@ -174,6 +174,31 @@ class DocsRepo:
             )
             row = cur.fetchone()
             return int(row[0]) if row else 0
+
+    def is_initial_scan_complete(self, path: str) -> bool:
+        with self._connect() as con:
+            cur = con.execute("SELECT initial_scan_complete FROM locations WHERE path=?", (path,))
+            row = cur.fetchone()
+            if not row:
+                return False
+            return bool(int(row[0]))
+
+    def update_location_scan_state(self, path: str, *, complete: bool | None = None, last_scan_count: int | None = None) -> None:
+        now = int(time.time())
+        sets = ["last_scan_ts=?"]
+        params: List[object] = [now]
+        if complete is not None:
+            sets.append("initial_scan_complete=?")
+            params.append(1 if complete else 0)
+        if last_scan_count is not None:
+            sets.append("last_scan_count=?")
+            params.append(int(last_scan_count))
+        sets_sql = ", ".join(sets)
+        with self._connect() as con:
+            # Ensure exists
+            self.ensure_location(con, path)
+            params.append(path)
+            con.execute(f"UPDATE locations SET {sets_sql} WHERE path=?", params)
 
     def search(self, query: str, filters: SearchFilters, limit: int = 500) -> Tuple[List[sqlite3.Row], Dict[str, Dict[str, int]]]:
         q = (query or "").strip()
