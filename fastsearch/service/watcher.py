@@ -166,3 +166,4 @@ def os_walk_filtered(root: Path, exclude_dir_names: Set[str]):
         # Filter exclude dirs by name (case-insensitive)
         dirnames[:] = [d for d in dirnames if d.lower() not in exclude_dir_names]
         yield dirpath, dirnames, filenames
+

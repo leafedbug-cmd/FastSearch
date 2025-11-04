@@ -118,7 +118,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.facets_panel.filtersChanged.connect(self._on_facets_changed)
         self.results.selectionModel().selectionChanged.connect(self._on_selection_changed)
         self.results.pathActivated.connect(self._open_path)
-        self.watcher.on_status(self._set_status)
+        # Route watcher status via queued signal to the UI thread
+        self.watcher.on_status(lambda msg: self.statusMessage.emit(msg))
 
         # Search worker thread
         self._thread = QtCore.QThread(self)
@@ -128,6 +129,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._worker.resultsReady.connect(self._apply_results)
         # Connect signal to worker (queued across threads)
         self.searchRequested.connect(self._worker.run_search)
+        # Status messages from background threads
+        self.statusMessage.connect(self._set_status)
 
         # Debounce timer
         self._timer = QtCore.QTimer(self)
