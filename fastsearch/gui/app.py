@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import os as _os
 from typing import List, Sequence
 
 from PySide6 import QtCore, QtWidgets
@@ -78,7 +79,11 @@ def run_gui() -> None:
     repo = DocsRepo()
     settings = Settings.load()
     watch_dirs = _load_default_watch_dirs()
-    indexer = ContentIndexer(workers=2, settings=settings)
+    # Speed: run content indexer with CPU-1 workers (at least 1)
+    _cpu = _os.cpu_count() or 2
+    _workers = max(1, _cpu - 1)
+    indexer = ContentIndexer(workers=_workers, settings=settings)
+    log.info(f"Content indexer using {_workers} workers")
     indexer.start()
     watcher = WatchService(repo, WatcherConfig(roots=watch_dirs, exclude_dir_names={s.lower() for s in DEFAULT_EXCLUDES}), indexer=indexer)
 
