@@ -118,8 +118,25 @@ class DocsRepo:
             location_path = parent
 
         with self._connect() as con:
-            loc_id = self.ensure_location(con, location_path)
-            con.execute(
+            return self._upsert_file_with_con(con, path, root_locations, location_path, name, name_norm, parent, ext, st, ft, sb, mbucket)
+
+    def _upsert_file_with_con(
+        self,
+        con: sqlite3.Connection,
+        path: Path,
+        root_locations: Sequence[Path],
+        location_path: str,
+        name: str,
+        name_norm: str,
+        parent: str,
+        ext: str,
+        st,
+        ft: str,
+        sb: str,
+        mbucket: str,
+    ) -> Optional[int]:
+        loc_id = self.ensure_location(con, location_path)
+        con.execute(
                 """
                 INSERT INTO docs(path, name, name_norm, parent, ext, size_bytes, mtime_ns, ctime_ns,
                                  filetype, size_bucket, date_bucket, location_id, deleted)
@@ -144,13 +161,21 @@ class DocsRepo:
                     ft, sb, mbucket, loc_id,
                 ),
             )
-            cur = con.execute("SELECT id FROM docs WHERE path=?", (str(path),))
-            row = cur.fetchone()
-            return int(row[0]) if row else None
+        cur = con.execute("SELECT id FROM docs WHERE path=?", (str(path),))
+        row = cur.fetchone()
+        return int(row[0]) if row else None
 
     def mark_deleted(self, path: Path) -> None:
         with self._connect() as con:
-            con.execute("UPDATE docs SET deleted=1 WHERE path=?", (str(path),))
+            cur = con.execute("SELECT id FROM docs WHERE path=?", (str(path),))
+            row = cur.fetchone()
+            if row:
+                doc_id = int(row[0])
+                con.execute("UPDATE docs SET deleted=1 WHERE id=?", (doc_id,))
+                try:
+                    con.execute("DELETE FROM content_fts WHERE rowid=?", (doc_id,))
+                except Exception:
+                    pass
 
     def location_ids_for_paths(self, paths: Sequence[str]) -> List[int]:
         if not paths:
@@ -200,23 +225,20 @@ class DocsRepo:
             params.append(path)
             con.execute(f"UPDATE locations SET {sets_sql} WHERE path=?", params)
 
-    def search(self, query: str, filters: SearchFilters, limit: int = 500) -> Tuple[List[sqlite3.Row], Dict[str, Dict[str, int]]]:
+    def search(self, query: str, filters: SearchFilters, limit: int = 500, mode: str = "all") -> Tuple[List[sqlite3.Row], Dict[str, Dict[str, int]]]:
         q = (query or "").strip()
-        where = ["docs.deleted=0"]
         params: List[object] = []
 
-        if q:
-            like = f"%{q.lower()}%"
-            where.append("(LOWER(docs.name) LIKE ? OR LOWER(docs.path) LIKE ?)")
-            params.extend([like, like])
+        # Filters
+        flt = ["docs.deleted=0"]
 
         def add_in(field: str, values: Optional[Sequence[object]]):
-            nonlocal where, params
+            nonlocal flt, params
             if values:
                 if "." not in field:
                     field = f"docs.{field}"
                 placeholders = ",".join(["?"] * len(values))
-                where.append(f"{field} IN ({placeholders})")
+                flt.append(f"{field} IN ({placeholders})")
                 params.extend(values)
 
         add_in("filetype", filters.filetypes)
@@ -224,35 +246,63 @@ class DocsRepo:
         add_in("date_bucket", filters.date_buckets)
         add_in("location_id", filters.location_ids)
 
-        where_sql = " AND ".join(where) if where else "1"
+        filter_sql = " AND ".join(flt) if flt else "1"
 
+        # Build candidate CTE
+        ctes: List[str] = []
+        cte_params: List[object] = []
+
+        import re
+        def like_params(q: str) -> List[str]:
+            like = f"%{q.lower()}%"
+            return [like, like]
+
+        if q:
+            if mode in ("filename", "all"):
+                ctes.append(
+                    f"SELECT id FROM docs WHERE {filter_sql} AND (LOWER(docs.name) LIKE ? OR LOWER(docs.path) LIKE ?)"
+                )
+                cte_params.extend(like_params(q))
+            if mode in ("content", "all"):
+                from .fts import build_match_query
+                match = build_match_query(q)
+                if match:
+                    ctes.append(
+                        f"SELECT docs.id FROM content_fts JOIN docs ON docs.id=content_fts.rowid WHERE {filter_sql} AND content_fts MATCH ?"
+                    )
+                    cte_params.append(match)
+        else:
+            # No query: candidates are just filtered docs
+            ctes.append(f"SELECT id FROM docs WHERE {filter_sql}")
+
+        cte_sql = " UNION " .join(ctes)
         order_sql = (
             "CASE WHEN LOWER(docs.name) LIKE ? THEN 0 ELSE 1 END, docs.mtime_ns DESC"
             if q else "docs.mtime_ns DESC"
         )
         order_params: List[object] = [f"%{q.lower()}%"] if q else []
 
-        base_sql = (
+        sql = (
+            "WITH candidate_ids AS (" + cte_sql + ") "
             "SELECT docs.*, locations.path AS location_path "
-            "FROM docs LEFT JOIN locations ON locations.id = docs.location_id "
-            f"WHERE {where_sql} ORDER BY {order_sql} LIMIT ?"
+            "FROM docs JOIN candidate_ids ON candidate_ids.id = docs.id "
+            "LEFT JOIN locations ON locations.id = docs.location_id "
+            f"ORDER BY {order_sql} LIMIT ?"
         )
-        rows: List[sqlite3.Row]
+
         with self._connect() as con:
             con.execute("PRAGMA query_only=1")
-            cur = con.execute(base_sql, (*params, *order_params, limit))
-            rows = cur.fetchall()
+            rows = con.execute(sql, (*params, *cte_params, *order_params, limit)).fetchall()
 
-            # Facets over the same candidate filter
             facets: Dict[str, Dict[str, int]] = {}
-
-            def facet_counts(column: str, table: str = "docs") -> Dict[str, int]:
-                cur2 = con.execute(
-                    f"SELECT {column}, COUNT(*) as c FROM {table} WHERE {where_sql} GROUP BY {column}",
-                    params,
+            def facet_counts(column: str) -> Dict[str, int]:
+                cur = con.execute(
+                    f"WITH candidate_ids AS (" + cte_sql + ") "
+                    f"SELECT {column}, COUNT(*) FROM docs JOIN candidate_ids ON candidate_ids.id = docs.id GROUP BY {column}",
+                    (*params, *cte_params),
                 )
                 out: Dict[str, int] = {}
-                for r in cur2.fetchall():
+                for r in cur.fetchall():
                     key = r[0]
                     key = str(key) if key is not None else ""
                     out[key] = int(r[1])
@@ -262,11 +312,12 @@ class DocsRepo:
             facets["size_bucket"] = facet_counts("size_bucket")
             facets["date_bucket"] = facet_counts("date_bucket")
 
-            # Location names lookup
+            # Locations
             loc_counts: Dict[str, int] = {}
             cur = con.execute(
-                f"SELECT location_id, COUNT(*) FROM docs WHERE {where_sql} GROUP BY location_id",
-                params,
+                f"WITH candidate_ids AS (" + cte_sql + ") "
+                f"SELECT docs.location_id, COUNT(*) FROM docs JOIN candidate_ids ON candidate_ids.id = docs.id GROUP BY docs.location_id",
+                (*params, *cte_params),
             )
             id_to_count = {int(r[0]): int(r[1]) for r in cur.fetchall() if r[0] is not None}
             if id_to_count:
@@ -280,4 +331,4 @@ class DocsRepo:
                     loc_counts[str(r[1])] = id_to_count.get(int(r[0]), 0)
             facets["location"] = loc_counts
 
-        return rows, facets
+            return rows, facets

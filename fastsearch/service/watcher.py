@@ -11,6 +11,7 @@ from watchdog.events import FileSystemEventHandler, FileSystemEvent
 from watchdog.observers import Observer
 
 from fastsearch.index.docs_repo import DocsRepo
+from .indexer import ContentIndexer
 
 
 log = logging.getLogger(__name__)
@@ -27,24 +28,34 @@ class WatcherConfig:
 
 
 class _Handler(FileSystemEventHandler):
-    def __init__(self, repo: DocsRepo, roots: Sequence[Path]) -> None:
+    def __init__(self, repo: DocsRepo, roots: Sequence[Path], indexer: ContentIndexer | None) -> None:
         super().__init__()
         self.repo = repo
         self.roots = roots
+        self.indexer = indexer
 
     def on_created(self, event: FileSystemEvent):  # type: ignore[override]
         if event.is_directory:
             return
-        self.repo.upsert_file(Path(event.src_path), self.roots)
+        p = Path(event.src_path)
+        self.repo.upsert_file(p, self.roots)
+        if self.indexer:
+            self.indexer.enqueue(p)
 
     def on_modified(self, event: FileSystemEvent):  # type: ignore[override]
         if event.is_directory:
             return
-        self.repo.upsert_file(Path(event.src_path), self.roots)
+        p = Path(event.src_path)
+        self.repo.upsert_file(p, self.roots)
+        if self.indexer:
+            self.indexer.enqueue(p)
 
     def on_moved(self, event):  # type: ignore[override]
         if getattr(event, "dest_path", None):
-            self.repo.upsert_file(Path(event.dest_path), self.roots)
+            p = Path(event.dest_path)
+            self.repo.upsert_file(p, self.roots)
+            if self.indexer:
+                self.indexer.enqueue(p)
         self.repo.mark_deleted(Path(event.src_path))
 
     def on_deleted(self, event: FileSystemEvent):  # type: ignore[override]
@@ -54,9 +65,10 @@ class _Handler(FileSystemEventHandler):
 
 
 class WatchService:
-    def __init__(self, repo: DocsRepo, cfg: WatcherConfig) -> None:
+    def __init__(self, repo: DocsRepo, cfg: WatcherConfig, indexer: ContentIndexer | None = None) -> None:
         self.repo = repo
         self.cfg = cfg
+        self.indexer = indexer
         self._observers: List[Observer] = []
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -79,6 +91,8 @@ class WatchService:
             for fn in filenames:
                 p = Path(dirpath) / fn
                 self.repo.upsert_file(p, self.cfg.roots)
+                if self.indexer:
+                    self.indexer.enqueue(p)
                 scanned += 1
                 if scanned % 500 == 0:
                     self.repo.update_location_scan_state(str(root), last_scan_count=scanned)
@@ -105,7 +119,7 @@ class WatchService:
                 self._scan_root(root)
 
         # Start observers
-        handler = _Handler(self.repo, self.cfg.roots)
+        handler = _Handler(self.repo, self.cfg.roots, self.indexer)
         for root in self.cfg.roots:
             ob = Observer()
             ob.schedule(handler, str(root), recursive=True)

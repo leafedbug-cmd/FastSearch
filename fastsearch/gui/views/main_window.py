@@ -32,7 +32,7 @@ class SearchWorker(QtCore.QObject):
         self._latest_seq = 0
 
     @QtCore.Slot(int, str, object)
-    def run_search(self, seq: int, text: str, sel_obj: object) -> None:
+    def run_search(self, seq: int, text: str, mode: str, sel_obj: object) -> None:
         sel: FacetSelection = sel_obj  # type: ignore[assignment]
         with self._lock:
             self._latest_seq = max(self._latest_seq, seq)
@@ -46,7 +46,7 @@ class SearchWorker(QtCore.QObject):
         )
         # Map selected locations (paths) → ids
         # We’ll resolve via a quick lookup using the repo’s connection in search()
-        rows, facets = self.repo.search(text, filters)
+        rows, facets = self.repo.search(text, filters, mode=mode)
 
         # Replace location facet keys with readable paths (already done by repo)
         # Note: rows need location path for table; fetch via join in repo
@@ -61,7 +61,7 @@ class SearchWorker(QtCore.QObject):
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    searchRequested = QtCore.Signal(int, str, object)
+    searchRequested = QtCore.Signal(int, str, str, object)
 
     def __init__(self, repo: DocsRepo, watch_dirs: List[Path], watcher, settings: Settings | None = None) -> None:
         super().__init__()
@@ -149,7 +149,7 @@ class MainWindow(QtWidgets.QMainWindow):
         text = self.search_edit.text()
         sel = self._state.facets
         # Dispatch to worker via signal
-        self.searchRequested.emit(self._seq, text, sel)
+        self.searchRequested.emit(self._seq, text, 'all', sel)
 
     @QtCore.Slot(list, dict)
     def _apply_results(self, rows: List[dict], facets: Dict[str, Dict[str, int]]) -> None:
@@ -235,3 +235,4 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception:
             pass
         super().closeEvent(event)
+
