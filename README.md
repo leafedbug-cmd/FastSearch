@@ -17,6 +17,7 @@ Features (MVP)
 - Blazing-fast filename/path search using SQLite with tuned PRAGMAs.
 - Faceted filters: File Type, Size, Date Modified, Location.
 - Polished PySide6 UI with a results table and preview pane.
+- Optional OCR for image previews (toggle in Settings). Requires Tesseract OCR installed and available on PATH.
 
 Configuration
 -------------
@@ -34,6 +35,5 @@ Roadmap (next)
 
 - Full-text indexing (FTS5) and content extraction.
 - Semantic search with local embeddings.
-- OCR for images and PDFs.
+- OCR for PDFs + content indexing.
 - Background service packaging (Windows service / LaunchAgent / systemd).
-
