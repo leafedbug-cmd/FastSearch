@@ -1,0 +1,8 @@
+PySide6>=6.5
+watchdog>=3.0.0
+psutil>=5.9
+typer>=0.9
+platformdirs>=4.2
+
+[:python_version < "3.11"]
+tomli>=2.0

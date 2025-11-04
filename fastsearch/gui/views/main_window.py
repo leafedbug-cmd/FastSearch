@@ -17,7 +17,7 @@ from ..models.facets_model import FacetCounts, FacetSelection
 @dataclass
 class SearchState:
     text: str = ""
-    facets: FacetSelection = FacetSelection()
+    facets: FacetSelection = QtCore.Field(default_factory=FacetSelection)  # type: ignore[attr-defined]
 
 
 class SearchWorker(QtCore.QObject):
