@@ -165,17 +165,19 @@ class DocsRepo:
 
     def search(self, query: str, filters: SearchFilters, limit: int = 500) -> Tuple[List[sqlite3.Row], Dict[str, Dict[str, int]]]:
         q = (query or "").strip()
-        where = ["deleted=0"]
+        where = ["docs.deleted=0"]
         params: List[object] = []
 
         if q:
             like = f"%{q.lower()}%"
-            where.append("(LOWER(name) LIKE ? OR LOWER(path) LIKE ?)")
+            where.append("(LOWER(docs.name) LIKE ? OR LOWER(docs.path) LIKE ?)")
             params.extend([like, like])
 
         def add_in(field: str, values: Optional[Sequence[object]]):
             nonlocal where, params
             if values:
+                if "." not in field:
+                    field = f"docs.{field}"
                 placeholders = ",".join(["?"] * len(values))
                 where.append(f"{field} IN ({placeholders})")
                 params.extend(values)
@@ -188,8 +190,8 @@ class DocsRepo:
         where_sql = " AND ".join(where) if where else "1"
 
         order_sql = (
-            "CASE WHEN LOWER(name) LIKE ? THEN 0 ELSE 1 END, mtime_ns DESC"
-            if q else "mtime_ns DESC"
+            "CASE WHEN LOWER(docs.name) LIKE ? THEN 0 ELSE 1 END, docs.mtime_ns DESC"
+            if q else "docs.mtime_ns DESC"
         )
         order_params: List[object] = [f"%{q.lower()}%"] if q else []
 
