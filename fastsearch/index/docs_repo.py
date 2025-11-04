@@ -163,6 +163,18 @@ class DocsRepo:
             )
             return [int(r[0]) for r in cur.fetchall()]
 
+    def count_docs_for_location_paths(self, paths: Sequence[str]) -> int:
+        if not paths:
+            return 0
+        with self._connect() as con:
+            placeholders = ",".join(["?"] * len(paths))
+            cur = con.execute(
+                f"SELECT COUNT(*) FROM docs WHERE deleted=0 AND location_id IN (SELECT id FROM locations WHERE path IN ({placeholders}))",
+                list(paths),
+            )
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
+
     def search(self, query: str, filters: SearchFilters, limit: int = 500) -> Tuple[List[sqlite3.Row], Dict[str, Dict[str, int]]]:
         q = (query or "").strip()
         where = ["docs.deleted=0"]

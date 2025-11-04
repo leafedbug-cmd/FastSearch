@@ -23,6 +23,7 @@ DEFAULT_EXCLUDES = {".git", "node_modules", "venv", ".venv", "__pycache__", ".id
 class WatcherConfig:
     roots: Sequence[Path]
     exclude_dir_names: Set[str]
+    skip_initial_if_index_present: bool = True
 
 
 class _Handler(FileSystemEventHandler):
@@ -85,8 +86,15 @@ class WatchService:
         self._emit_status(f"Indexing complete ({scanned} files)")
 
     def start(self) -> None:
-        # Initial scan in this thread
-        self._initial_scan()
+        # Possibly skip initial scan if index exists for these roots
+        if self.cfg.skip_initial_if_index_present:
+            existing = self.repo.count_docs_for_location_paths([str(p) for p in self.cfg.roots])
+            if existing > 0:
+                self._emit_status(f"Loaded index ({existing} files)")
+            else:
+                self._initial_scan()
+        else:
+            self._initial_scan()
 
         # Start observers
         handler = _Handler(self.repo, self.cfg.roots)
