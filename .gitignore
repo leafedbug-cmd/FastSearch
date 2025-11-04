@@ -1,3 +1,7 @@
 fastsearch_data/
 *.db*
 *.log
+
+__pycache__/
+*.pyc
+
