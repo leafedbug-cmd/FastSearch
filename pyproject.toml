@@ -15,8 +15,9 @@ dependencies = [
   "typer>=0.9",
   "platformdirs>=4.2",
   "tomli>=2.0; python_version<'3.11'",
+  "pytesseract>=0.3.13; platform_system == 'Windows' or platform_system == 'Linux' or platform_system == 'Darwin'",
+  "Pillow>=10.0",
 ]
 
 [project.scripts]
 fastsearch = "fastsearch.cli:app"
-

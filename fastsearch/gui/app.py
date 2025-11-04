@@ -11,6 +11,7 @@ from PySide6 import QtCore, QtWidgets
 from fastsearch.index.db import initialize
 from fastsearch.index.docs_repo import DocsRepo
 from fastsearch.service.watcher import WatchService, WatcherConfig, DEFAULT_EXCLUDES
+from fastsearch.config.settings import Settings
 from .views.main_window import MainWindow
 
 
@@ -74,10 +75,11 @@ def run_gui() -> None:
             app.setStyleSheet(f.read())
 
     repo = DocsRepo()
+    settings = Settings.load()
     watch_dirs = _load_default_watch_dirs()
     watcher = WatchService(repo, WatcherConfig(roots=watch_dirs, exclude_dir_names={s.lower() for s in DEFAULT_EXCLUDES}))
 
-    win = MainWindow(repo=repo, watch_dirs=watch_dirs, watcher=watcher)
+    win = MainWindow(repo=repo, watch_dirs=watch_dirs, watcher=watcher, settings=settings)
     win.resize(1250, 760)
     win.show()
 

@@ -13,6 +13,7 @@ from .facets_panel import FacetsPanel
 from .preview_pane import PreviewPane
 from ..models.facets_model import FacetCounts, FacetSelection
 from .delegates import PillDelegate
+from fastsearch.config.settings import Settings
 
 
 @dataclass
@@ -62,12 +63,13 @@ class SearchWorker(QtCore.QObject):
 class MainWindow(QtWidgets.QMainWindow):
     searchRequested = QtCore.Signal(int, str, object)
 
-    def __init__(self, repo: DocsRepo, watch_dirs: List[Path], watcher) -> None:
+    def __init__(self, repo: DocsRepo, watch_dirs: List[Path], watcher, settings: Settings | None = None) -> None:
         super().__init__()
         self.setWindowTitle("FastSearch")
         self.repo = repo
         self.watch_dirs = watch_dirs
         self.watcher = watcher
+        self.settings = settings or Settings()
 
         self._seq = 0
         self._state = SearchState()
@@ -101,7 +103,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.results.setItemDelegateForColumn(2, PillDelegate(self.results))
         splitter.addWidget(center)
 
-        self.preview = PreviewPane()
+        self.preview = PreviewPane(settings=self.settings)
         splitter.addWidget(self.preview)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
@@ -189,6 +191,12 @@ class MainWindow(QtWidgets.QMainWindow):
         btn_row.addWidget(rem_btn)
         btn_row.addStretch(1)
         layout.addLayout(btn_row)
+
+        # OCR toggle
+        ocr_cb = QtWidgets.QCheckBox("Enable OCR for images (Preview)")
+        ocr_cb.setChecked(self.settings.enable_ocr)
+        layout.addWidget(ocr_cb)
+
         close_btn = QtWidgets.QPushButton("Close")
         close_btn.clicked.connect(dlg.accept)
         layout.addWidget(close_btn)
@@ -208,7 +216,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         add_btn.clicked.connect(add_folder)
         rem_btn.clicked.connect(remove_selected)
-        dlg.exec()
+        if dlg.exec():
+            self.settings.enable_ocr = ocr_cb.isChecked()
+            try:
+                self.settings.save()
+            except Exception:
+                pass
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[override]
         try:

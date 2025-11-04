@@ -10,7 +10,7 @@ class PillDelegate(QtWidgets.QStyledItemDelegate):
 
     def paint(self, painter: QtGui.QPainter, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> None:  # type: ignore[override]
         text = str(index.data(QtCore.Qt.DisplayRole) or "")
-        ft = text
+        ft = index.data(QtCore.Qt.UserRole + 1) or text
         color = color_for_filetype(ft)
         # Base style painting (for selection highlighting background)
         opt = QtWidgets.QStyleOptionViewItem(option)
@@ -43,4 +43,3 @@ class PillDelegate(QtWidgets.QStyledItemDelegate):
     def sizeHint(self, option: QtWidgets.QStyleOptionViewItem, index: QtCore.QModelIndex) -> QtCore.QSize:  # type: ignore[override]
         base = super().sizeHint(option, index)
         return QtCore.QSize(base.width(), max(base.height(), 28))
-

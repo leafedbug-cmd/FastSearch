@@ -5,13 +5,15 @@ from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
 from fastsearch.index.docs_repo import classify_filetype
+from fastsearch.config.settings import Settings
 from ..style.colors import color_for_filetype
 
 
 class PreviewPane(QtWidgets.QWidget):
-    def __init__(self, preview_max_bytes: int = 2_000_000) -> None:
+    def __init__(self, preview_max_bytes: int = 2_000_000, settings: Settings | None = None) -> None:
         super().__init__()
         self.preview_max_bytes = preview_max_bytes
+        self.settings = settings or Settings()
         layout = QtWidgets.QVBoxLayout(self)
 
         self.title = QtWidgets.QLabel("Preview")
@@ -50,7 +52,13 @@ class PreviewPane(QtWidgets.QWidget):
         self.title.setText(p.name)
         try:
             st = p.stat()
-            details = f"{p}\nSize: {st.st_size:,} bytes\nModified: {QtCore.QDateTime.fromSecsSinceEpoch(int(st.st_mtime)).toString()}"
+            ft = classify_filetype(p.suffix)
+            ext = p.suffix.lstrip('.').upper()
+            details = (
+                f"{p}\nType: {ext} {ft}\n"
+                f"Size: {st.st_size:,} bytes\n"
+                f"Modified: {QtCore.QDateTime.fromSecsSinceEpoch(int(st.st_mtime)).toString()}"
+            )
             self.info.setText(details)
         except Exception as e:
             self.info.setText(str(p))
@@ -71,7 +79,35 @@ class PreviewPane(QtWidgets.QWidget):
                         return
             except Exception:
                 pass
+        # If OCR enabled and image file, attempt OCR in background
+        if self.settings.enable_ocr and p.suffix.lower() in (".png", ".jpg", ".jpeg", ".bmp", ".tiff"):
+            self.text.setPlainText("Running OCR…")
+            self._run_ocr(p)
+            return
         self.text.setPlainText("(No preview available)")
+
+    def _run_ocr(self, path: Path) -> None:
+        def work() -> str:
+            try:
+                try:
+                    import pytesseract  # type: ignore
+                except Exception:
+                    return "OCR unavailable: install pytesseract and Tesseract OCR."
+                try:
+                    from PIL import Image  # type: ignore
+                except Exception:
+                    return "OCR unavailable: install Pillow."
+                img = Image.open(path)
+                text = pytesseract.image_to_string(img)
+                return text.strip() or "(No text detected)"
+            except Exception as e:
+                return f"OCR failed: {e}"
+
+        import threading
+        def done(result: str) -> None:
+            QtCore.QTimer.singleShot(0, lambda: self.text.setPlainText(result))
+
+        threading.Thread(target=lambda: done(work()), daemon=True).start()
 
     def _open(self) -> None:
         if not self._path:

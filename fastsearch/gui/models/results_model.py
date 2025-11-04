@@ -39,6 +39,9 @@ class ResultsTableModel(QtCore.QAbstractTableModel):
             if col == 1:
                 return row.get("location_path", "")
             if col == 2:
+                ext = (row.get("ext") or "").lstrip(".")
+                if ext:
+                    return ext.upper()
                 return row.get("filetype")
             if col == 3:
                 return self._format_size(row.get("size_bytes", 0))
@@ -48,6 +51,9 @@ class ResultsTableModel(QtCore.QAbstractTableModel):
         if role == QtCore.Qt.BackgroundRole:
             ft = (row.get("filetype") or "")
             return tinted_background(ft, alpha=24)
+        if role == QtCore.Qt.UserRole + 1:
+            if col == 2:
+                return row.get("filetype")
         if role == QtCore.Qt.DecorationRole:
             if col == 0:
                 # Choose icon by filetype (simple mapping)
