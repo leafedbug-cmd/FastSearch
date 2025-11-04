@@ -59,6 +59,8 @@ class SearchWorker(QtCore.QObject):
 
 
 class MainWindow(QtWidgets.QMainWindow):
+    searchRequested = QtCore.Signal(int, str, object)
+
     def __init__(self, repo: DocsRepo, watch_dirs: List[Path], watcher) -> None:
         super().__init__()
         self.setWindowTitle("FastSearch")
@@ -119,6 +121,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._worker.moveToThread(self._thread)
         self._thread.start()
         self._worker.resultsReady.connect(self._apply_results)
+        # Connect signal to worker (queued across threads)
+        self.searchRequested.connect(self._worker.run_search)
 
         # Debounce timer
         self._timer = QtCore.QTimer(self)
@@ -139,15 +143,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._seq += 1
         text = self.search_edit.text()
         sel = self._state.facets
-        # Dispatch to worker
-        QtCore.QMetaObject.invokeMethod(
-            self._worker,
-            "run_search",
-            QtCore.Qt.QueuedConnection,
-            QtCore.Q_ARG(int, self._seq),
-            QtCore.Q_ARG(str, text),
-            QtCore.Q_ARG(object, sel),
-        )
+        # Dispatch to worker via signal
+        self.searchRequested.emit(self._seq, text, sel)
 
     @QtCore.Slot(list, dict)
     def _apply_results(self, rows: List[dict], facets: Dict[str, Dict[str, int]]) -> None:
@@ -209,3 +206,16 @@ class MainWindow(QtWidgets.QMainWindow):
         add_btn.clicked.connect(add_folder)
         rem_btn.clicked.connect(remove_selected)
         dlg.exec()
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:  # type: ignore[override]
+        try:
+            if self.watcher:
+                self.watcher.stop()
+        except Exception:
+            pass
+        try:
+            self._thread.quit()
+            self._thread.wait(2000)
+        except Exception:
+            pass
+        super().closeEvent(event)

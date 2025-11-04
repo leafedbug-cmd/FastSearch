@@ -70,13 +70,7 @@ class WatchService:
             self._on_status(msg)
 
     def _initial_scan(self) -> None:
-        total = 0
         scanned = 0
-        # Rough estimate pass to show progress: count files
-        for root in self.cfg.roots:
-            for _dirpath, dirnames, filenames in os_walk_filtered(root, self.cfg.exclude_dir_names):
-                total += len(filenames)
-        total = max(total, 1)
         self._emit_status("Indexing…")
         for root in self.cfg.roots:
             for dirpath, dirnames, filenames in os_walk_filtered(root, self.cfg.exclude_dir_names):
@@ -85,7 +79,7 @@ class WatchService:
                     self.repo.upsert_file(p, self.cfg.roots)
                     scanned += 1
                     if scanned % 500 == 0:
-                        self._emit_status(f"Indexing… {scanned}/{total}")
+                        self._emit_status(f"Indexing… {scanned} files")
                     if self._stop_event.is_set():
                         return
         self._emit_status(f"Indexing complete ({scanned} files)")
@@ -131,4 +125,3 @@ def os_walk_filtered(root: Path, exclude_dir_names: Set[str]):
         # Filter exclude dirs by name (case-insensitive)
         dirnames[:] = [d for d in dirnames if d.lower() not in exclude_dir_names]
         yield dirpath, dirnames, filenames
-

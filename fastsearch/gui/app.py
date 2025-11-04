@@ -17,15 +17,40 @@ from .views.main_window import MainWindow
 log = logging.getLogger(__name__)
 
 
+def _load_env_watch_dirs() -> List[Path]:
+    env = os.environ.get("FASTSEARCH_WATCH_DIRS")
+    if not env:
+        return []
+    parts = [p.strip() for p in env.split(os.pathsep) if p.strip()]
+    paths: List[Path] = []
+    for p in parts:
+        pp = Path(p)
+        if pp.exists() and pp.is_dir():
+            paths.append(pp)
+    return paths
+
+
 def _load_default_watch_dirs() -> List[Path]:
-    # Try to infer a sensible default: user's Documents folder
+    # 1) Environment override
+    env = _load_env_watch_dirs()
+    if env:
+        return env
+    # 2) On Windows, suggest the system drive root if desired
+    try:
+        if os.name == "nt":
+            system_drive = os.environ.get("SystemDrive", "C:")
+            root = Path(system_drive + "\\")
+            if root.exists():
+                return [root]
+    except Exception:
+        pass
+    # 3) Fallback: user's Documents/Desktop/Downloads, then home
     home = Path.home()
     candidates = []
-    for name in ("Documents", "downloads", "Desktop", "documents"):
+    for name in ("Documents", "Downloads", "Desktop"):
         p = home / name
         if p.exists() and p.is_dir():
             candidates.append(p)
-    # Fallback to home
     if not candidates:
         candidates.append(home)
     return candidates
