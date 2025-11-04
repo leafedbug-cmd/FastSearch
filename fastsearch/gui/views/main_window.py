@@ -236,3 +236,4 @@ class MainWindow(QtWidgets.QMainWindow):
             pass
         super().closeEvent(event)
 
+
