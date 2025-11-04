@@ -36,7 +36,6 @@ class _FacetGroup(QtWidgets.QGroupBox):
                 label = f"{label_txt} ({count})"
             cb = QtWidgets.QCheckBox()
             cb.setText(label)
-            cb.setTextFormat(QtCore.Qt.RichText)
             cb.setProperty("facet_key", key)
             cb.setChecked(key in selected)
             cb.stateChanged.connect(self.selectionChanged.emit)
