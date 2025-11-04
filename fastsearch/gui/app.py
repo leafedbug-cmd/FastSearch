@@ -82,7 +82,11 @@ def run_gui() -> None:
     watch_dirs = _load_default_watch_dirs()
     # Speed: run content indexer with CPU-1 workers (at least 1)
     _cpu = _os.cpu_count() or 2
-    _workers = max(1, _cpu - 1)
+    _env_workers = _os.environ.get("FASTSEARCH_INDEXER_WORKERS")
+    if _env_workers and _env_workers.isdigit():
+        _workers = max(1, int(_env_workers))
+    else:
+        _workers = max(1, min(4, _cpu - 1))
     indexer = ContentIndexer(workers=_workers, settings=settings)
     log.info(f"Content indexer using {_workers} workers")
     indexer.start()
