@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 
 from PySide6 import QtCore, QtGui, QtWidgets
+from fastsearch.index.docs_repo import classify_filetype
+from ..style.colors import color_for_filetype
 
 
 class PreviewPane(QtWidgets.QWidget):
@@ -13,7 +15,7 @@ class PreviewPane(QtWidgets.QWidget):
         layout = QtWidgets.QVBoxLayout(self)
 
         self.title = QtWidgets.QLabel("Preview")
-        self.title.setStyleSheet("font-weight: bold; font-size: 12pt;")
+        self.title.setStyleSheet("font-weight: bold; font-size: 12pt; padding:8px; border-radius:6px; background:#2a2c31;")
         layout.addWidget(self.title)
 
         self.info = QtWidgets.QLabel("")
@@ -53,6 +55,12 @@ class PreviewPane(QtWidgets.QWidget):
         except Exception as e:
             self.info.setText(str(p))
 
+        # Color accent by file type
+        ft = classify_filetype(p.suffix)
+        c = color_for_filetype(ft)
+        text_color = "#ffffff"
+        self.title.setStyleSheet(f"font-weight:bold; font-size:12pt; padding:8px; border-radius:6px; background:{c.name()}; color:{text_color};")
+
         # Try to preview text files (small)
         if p.suffix.lower() in (".txt", ".md", ".py", ".json", ".log", ".csv", ".yaml", ".yml"):
             try:
@@ -76,4 +84,3 @@ class PreviewPane(QtWidgets.QWidget):
         p = Path(self._path)
         folder = str(p.parent)
         QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(folder))
-

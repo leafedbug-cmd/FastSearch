@@ -10,10 +10,11 @@ from ..models.facets_model import FacetCounts, FacetSelection
 class _FacetGroup(QtWidgets.QGroupBox):
     selectionChanged = QtCore.Signal()
 
-    def __init__(self, title: str) -> None:
+    def __init__(self, title: str, kind: str | None = None) -> None:
         super().__init__(title)
         self.setLayout(QtWidgets.QVBoxLayout())
         self._checks: Dict[str, QtWidgets.QCheckBox] = {}
+        self._kind = kind  # e.g., 'filetype', 'size', etc.
 
     def set_items(self, items: Dict[str, int], selected: List[str]) -> None:
         # Clear
@@ -24,9 +25,18 @@ class _FacetGroup(QtWidgets.QGroupBox):
                 w.deleteLater()
         self._checks.clear()
         # Add sorted by name
+        from ..style.colors import FILETYPE_COLORS
         for key, count in sorted(items.items(), key=lambda kv: kv[0].lower()):
-            label = f"{key} ({count})" if key else f"(Unknown) ({count})"
-            cb = QtWidgets.QCheckBox(label)
+            label_txt = key if key else "(Unknown)"
+            if self._kind == "filetype":
+                hex_color = FILETYPE_COLORS.get(label_txt, FILETYPE_COLORS.get("Other", "#9aa0a6"))
+                dot = f"<span style='color:{hex_color}; font-size:14px;'>●</span> "
+                label = f"<html>{dot}{QtCore.QCoreApplication.translate('', label_txt)} <span style='color:#9aa0a6'>({count})</span></html>"
+            else:
+                label = f"{label_txt} ({count})"
+            cb = QtWidgets.QCheckBox()
+            cb.setText(label)
+            cb.setTextFormat(QtCore.Qt.RichText)
             cb.setProperty("facet_key", key)
             cb.setChecked(key in selected)
             cb.stateChanged.connect(self.selectionChanged.emit)
@@ -48,7 +58,7 @@ class FacetsPanel(QtWidgets.QScrollArea):
         self.setWidget(self._inner)
         self._layout = QtWidgets.QVBoxLayout(self._inner)
 
-        self.group_type = _FacetGroup("File Type")
+        self.group_type = _FacetGroup("File Type", kind="filetype")
         self.group_size = _FacetGroup("Size")
         self.group_date = _FacetGroup("Date Modified")
         self.group_location = _FacetGroup("Location")
@@ -73,4 +83,3 @@ class FacetsPanel(QtWidgets.QScrollArea):
             location=self.group_location.selected(),
         )
         self.filtersChanged.emit(sel)
-

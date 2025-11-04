@@ -12,6 +12,7 @@ from .results_view import ResultsView
 from .facets_panel import FacetsPanel
 from .preview_pane import PreviewPane
 from ..models.facets_model import FacetCounts, FacetSelection
+from .delegates import PillDelegate
 
 
 @dataclass
@@ -96,6 +97,8 @@ class MainWindow(QtWidgets.QMainWindow):
         center_layout = QtWidgets.QVBoxLayout(center)
         self.results = ResultsView()
         center_layout.addWidget(self.results)
+        # Color pill delegate for Type column
+        self.results.setItemDelegateForColumn(2, PillDelegate(self.results))
         splitter.addWidget(center)
 
         self.preview = PreviewPane()

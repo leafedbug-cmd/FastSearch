@@ -1,31 +1,31 @@
 /* A lightweight, readable dark theme */
 QWidget {
-  background: #1e1f22;
-  color: #e8e8e8;
-  selection-background-color: #2a82da;
+  background: #111216;
+  color: #e9eaf1;
+  selection-background-color: #4c8dff;
 }
 QLineEdit, QPlainTextEdit, QTextEdit, QTableView, QListView, QTreeView, QGroupBox, QToolBar {
-  background: #23252a;
-  border: 1px solid #3a3d44;
+  background: #171a1f;
+  border: 1px solid #2c3037;
   border-radius: 4px;
 }
 QToolBar {
   border: none;
 }
 QHeaderView::section {
-  background-color: #2a2c31;
-  color: #d8d8d8;
+  background-color: #1f2329;
+  color: #e0e3ea;
   padding: 4px;
-  border: 1px solid #3a3d44;
+  border: 1px solid #2c3037;
 }
 QPushButton {
-  background-color: #2a2c31;
-  border: 1px solid #3a3d44;
+  background-color: #1f2329;
+  border: 1px solid #2c3037;
   padding: 5px 10px;
   border-radius: 4px;
 }
 QPushButton:hover {
-  background-color: #2e3036;
+  background-color: #262b33;
 }
 QGroupBox {
   margin-top: 10px;
@@ -37,5 +37,15 @@ QGroupBox::title {
   background: transparent;
 }
 QStatusBar {
-  background: #1b1c1f;
+  background: #0f1114;
+}
+
+/* Table row hover */
+QTableView::item:hover {
+  background: #1c2026;
+}
+
+/* Facet checkboxes rich text look crisper with no subpixel AA */
+QCheckBox {
+  spacing: 6px;
 }

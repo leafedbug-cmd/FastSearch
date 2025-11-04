@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Sequence
 
 from PySide6 import QtCore, QtGui, QtWidgets
+from ..style.colors import tinted_background
 
 
 class ResultsTableModel(QtCore.QAbstractTableModel):
@@ -44,6 +45,9 @@ class ResultsTableModel(QtCore.QAbstractTableModel):
             if col == 4:
                 ts = row.get("mtime_ns", 0) / 1e9
                 return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+        if role == QtCore.Qt.BackgroundRole:
+            ft = (row.get("filetype") or "")
+            return tinted_background(ft, alpha=24)
         if role == QtCore.Qt.DecorationRole:
             if col == 0:
                 # Choose icon by filetype (simple mapping)
