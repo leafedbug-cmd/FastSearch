@@ -327,23 +327,18 @@ class DocsRepo:
             facets["size_bucket"] = facet_counts("size_bucket")
             facets["date_bucket"] = facet_counts("date_bucket")
 
-            # Locations
+            # Locations (avoid huge IN lists by joining)
             loc_counts: Dict[str, int] = {}
             cur = con.execute(
-                f"WITH candidate_ids AS (" + cte_sql + ") "
-                f"SELECT docs.location_id, COUNT(*) FROM docs JOIN candidate_ids ON candidate_ids.id = docs.id GROUP BY docs.location_id",
+                "WITH candidate_ids AS (" + cte_sql + ") "
+                "SELECT locations.path, COUNT(*) "
+                "FROM docs JOIN candidate_ids ON candidate_ids.id = docs.id "
+                "JOIN locations ON locations.id = docs.location_id "
+                "GROUP BY locations.path",
                 (*params, *cte_params),
             )
-            id_to_count = {int(r[0]): int(r[1]) for r in cur.fetchall() if r[0] is not None}
-            if id_to_count:
-                ids = tuple(id_to_count.keys())
-                placeholders = ",".join(["?"] * len(ids))
-                cur = con.execute(
-                    f"SELECT id, path FROM locations WHERE id IN ({placeholders})",
-                    ids,
-                )
-                for r in cur.fetchall():
-                    loc_counts[str(r[1])] = id_to_count.get(int(r[0]), 0)
+            for r in cur.fetchall():
+                loc_counts[str(r[0])] = int(r[1])
             facets["location"] = loc_counts
 
             return rows, facets

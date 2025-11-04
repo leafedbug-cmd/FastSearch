@@ -26,7 +26,7 @@ def extract_text_for_index(path: Path, settings: Optional[Settings] = None, max_
             except Exception:
                 return None
             try:
-                reader = PdfReader(str(path))
+                reader = PdfReader(str(path), strict=False)
                 parts = []
                 for page in reader.pages:
                     try:
@@ -57,4 +57,3 @@ def extract_text_for_index(path: Path, settings: Optional[Settings] = None, max_
     except Exception:
         return None
     return None
-
