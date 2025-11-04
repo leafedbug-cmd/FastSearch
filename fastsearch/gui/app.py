@@ -62,6 +62,7 @@ def _load_default_watch_dirs() -> List[Path]:
 def run_gui() -> None:
     # Basic logging
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
 
     # Ensure DB initialized
     initialize()
