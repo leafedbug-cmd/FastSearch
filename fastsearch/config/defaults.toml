@@ -1,0 +1,16 @@
+# FastSearch default configuration
+
+# Directories to watch and index. You can edit this list or add folders via the UI.
+watch_dirs = [
+  # Update these paths as needed, or add via UI Settings
+  # On Windows, env: %USERPROFILE%\\Documents
+]
+
+# Exclude directory names (case-insensitive equality on folder name)
+exclude_dir_names = [
+  ".git", "node_modules", "venv", ".venv", "__pycache__", ".idea", ".vscode"
+]
+
+# Max file size to preview in UI in bytes (default ~2 MB)
+preview_max_bytes = 2_000_000
+

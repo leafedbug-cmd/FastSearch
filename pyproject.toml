@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastsearch"
+version = "0.1.0"
+description = "Fast, AI-driven desktop file search (MVP: filename search with facets UI)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "PySide6>=6.5",
+  "watchdog>=3.0.0",
+  "psutil>=5.9",
+  "typer>=0.9",
+  "platformdirs>=4.2",
+  "tomli>=2.0; python_version<'3.11'",
+]
+
+[project.scripts]
+fastsearch = "fastsearch.cli:app"
+

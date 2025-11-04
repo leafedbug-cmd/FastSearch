@@ -1,0 +1,41 @@
+/* A lightweight, readable dark theme */
+QWidget {
+  background: #1e1f22;
+  color: #e8e8e8;
+  selection-background-color: #2a82da;
+}
+QLineEdit, QPlainTextEdit, QTextEdit, QTableView, QListView, QTreeView, QGroupBox, QToolBar {
+  background: #23252a;
+  border: 1px solid #3a3d44;
+  border-radius: 4px;
+}
+QToolBar {
+  border: none;
+}
+QHeaderView::section {
+  background-color: #2a2c31;
+  color: #d8d8d8;
+  padding: 4px;
+  border: 1px solid #3a3d44;
+}
+QPushButton {
+  background-color: #2a2c31;
+  border: 1px solid #3a3d44;
+  padding: 5px 10px;
+  border-radius: 4px;
+}
+QPushButton:hover {
+  background-color: #2e3036;
+}
+QGroupBox {
+  margin-top: 10px;
+}
+QGroupBox::title {
+  subcontrol-origin: margin;
+  subcontrol-position: top left;
+  padding: 2px 5px;
+  background: transparent;
+}
+QStatusBar {
+  background: #1b1c1f;
+}
