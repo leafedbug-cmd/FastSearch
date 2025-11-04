@@ -38,5 +38,5 @@ CREATE INDEX IF NOT EXISTS idx_docs_location ON docs(location_id);
 -- Full-text search over extracted content (rowid aligned to docs.id)
 CREATE VIRTUAL TABLE IF NOT EXISTS content_fts USING fts5(
   content,
-  tokenize = 'unicode61 remove_diacritics 2 tokenchars "-_'"'
+  tokenize = 'unicode61 remove_diacritics 2'
 );

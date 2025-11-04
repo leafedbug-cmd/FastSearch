@@ -31,7 +31,7 @@ class SearchWorker(QtCore.QObject):
         self._lock = threading.Lock()
         self._latest_seq = 0
 
-    @QtCore.Slot(int, str, object)
+    @QtCore.Slot(int, str, str, object)
     def run_search(self, seq: int, text: str, mode: str, sel_obj: object) -> None:
         sel: FacetSelection = sel_obj  # type: ignore[assignment]
         with self._lock:
