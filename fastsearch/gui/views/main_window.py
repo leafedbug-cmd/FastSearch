@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -17,7 +17,7 @@ from ..models.facets_model import FacetCounts, FacetSelection
 @dataclass
 class SearchState:
     text: str = ""
-    facets: FacetSelection = QtCore.Field(default_factory=FacetSelection)  # type: ignore[attr-defined]
+    facets: FacetSelection = field(default_factory=FacetSelection)
 
 
 class SearchWorker(QtCore.QObject):

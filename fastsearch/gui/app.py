@@ -60,3 +60,6 @@ def run_gui() -> None:
 
     app.exec()
 
+
+if __name__ == "__main__":
+    run_gui()
