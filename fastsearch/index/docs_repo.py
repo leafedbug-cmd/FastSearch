@@ -225,6 +225,21 @@ class DocsRepo:
             params.append(path)
             con.execute(f"UPDATE locations SET {sets_sql} WHERE path=?", params)
 
+    def iter_paths_missing_content(self, roots: Sequence[Path], batch: int = 5000):
+        if not roots:
+            return []
+        root_strs = [str(p) for p in roots]
+        with self._connect() as con:
+            placeholders = ",".join(["?"] * len(root_strs))
+            sql = (
+                "SELECT docs.path FROM docs "
+                "LEFT JOIN content_fts ON content_fts.rowid = docs.id "
+                f"WHERE docs.deleted=0 AND content_fts.rowid IS NULL AND docs.location_id IN (SELECT id FROM locations WHERE path IN ({placeholders})) "
+                "LIMIT ?"
+            )
+            cur = con.execute(sql, (*root_strs, batch))
+            return [Path(r[0]) for r in cur.fetchall()]
+
     def search(self, query: str, filters: SearchFilters, limit: int = 500, mode: str = "all") -> Tuple[List[sqlite3.Row], Dict[str, Dict[str, int]]]:
         q = (query or "").strip()
         params: List[object] = []

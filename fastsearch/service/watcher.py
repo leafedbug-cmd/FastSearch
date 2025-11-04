@@ -118,6 +118,17 @@ class WatchService:
                     break
                 self._scan_root(root)
 
+        # Enqueue any docs missing content for background indexing
+        try:
+            if self.indexer:
+                missing = self.repo.iter_paths_missing_content(self.cfg.roots, batch=5000)
+                for p in missing:
+                    self.indexer.enqueue(p)
+                if missing:
+                    self._emit_status(f"Queueing content index for {len(missing)} files…")
+        except Exception:
+            pass
+
         # Start observers
         handler = _Handler(self.repo, self.cfg.roots, self.indexer)
         for root in self.cfg.roots:
