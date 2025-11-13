@@ -8,12 +8,16 @@ fastsearch.egg-info/dependency_links.txt
 fastsearch.egg-info/entry_points.txt
 fastsearch.egg-info/requires.txt
 fastsearch.egg-info/top_level.txt
+fastsearch/config/settings.py
+fastsearch/extractors/router.py
 fastsearch/gui/__init__.py
 fastsearch/gui/app.py
 fastsearch/gui/models/__init__.py
 fastsearch/gui/models/facets_model.py
 fastsearch/gui/models/results_model.py
+fastsearch/gui/style/colors.py
 fastsearch/gui/views/__init__.py
+fastsearch/gui/views/delegates.py
 fastsearch/gui/views/facets_panel.py
 fastsearch/gui/views/main_window.py
 fastsearch/gui/views/preview_pane.py
@@ -21,5 +25,10 @@ fastsearch/gui/views/results_view.py
 fastsearch/index/__init__.py
 fastsearch/index/db.py
 fastsearch/index/docs_repo.py
+fastsearch/index/fts.py
 fastsearch/service/__init__.py
+fastsearch/service/indexer.py
 fastsearch/service/watcher.py
+tests/test_docs_repo.py
+tests/test_gui_smoke.py
+tests/test_watch_service.py

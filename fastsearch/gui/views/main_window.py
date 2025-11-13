@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,8 +23,12 @@ class SearchState:
     facets: FacetSelection = field(default_factory=FacetSelection)
 
 
+log = logging.getLogger(__name__)
+
+
 class SearchWorker(QtCore.QObject):
     resultsReady = QtCore.Signal(list, dict)  # rows, facets
+    errorOccurred = QtCore.Signal(str)
 
     def __init__(self, repo: DocsRepo) -> None:
         super().__init__()
@@ -37,31 +42,31 @@ class SearchWorker(QtCore.QObject):
         with self._lock:
             self._latest_seq = max(self._latest_seq, seq)
             current = self._latest_seq
-        loc_ids = self.repo.location_ids_for_paths(sel.location)
-        filters = SearchFilters(
-            filetypes=sel.filetype or None,
-            size_buckets=sel.size_bucket or None,
-            date_buckets=sel.date_bucket or None,
-            location_ids=loc_ids or None,
-        )
-        # Map selected locations (paths) → ids
-        # We’ll resolve via a quick lookup using the repo’s connection in search()
-        rows, facets = self.repo.search(text, filters, mode=mode)
-
-        # Replace location facet keys with readable paths (already done by repo)
-        # Note: rows need location path for table; fetch via join in repo
-        # Provide rows as dicts with location_path key
-        out_rows = []
-        for r in rows:
-            d = dict(r)
-            d.setdefault("location_path", "")
-            out_rows.append(d)
-        if seq == current:
-            self.resultsReady.emit(out_rows, facets)
+        try:
+            loc_ids = self.repo.location_ids_for_paths(sel.location)
+            filters = SearchFilters(
+                filetypes=sel.filetype or None,
+                size_buckets=sel.size_bucket or None,
+                date_buckets=sel.date_bucket or None,
+                location_ids=loc_ids or None,
+            )
+            rows, facets = self.repo.search(text, filters, mode=mode)
+            out_rows = []
+            for r in rows:
+                d = dict(r)
+                d.setdefault("location_path", "")
+                out_rows.append(d)
+            if seq == current:
+                self.resultsReady.emit(out_rows, facets)
+        except Exception as exc:
+            log.exception("Search failed")
+            if seq == current:
+                self.errorOccurred.emit(f"Search failed: {exc}")
 
 
 class MainWindow(QtWidgets.QMainWindow):
     searchRequested = QtCore.Signal(int, str, str, object)
+    statusMessage = QtCore.Signal(str)
 
     def __init__(self, repo: DocsRepo, watch_dirs: List[Path], watcher, settings: Settings | None = None) -> None:
         super().__init__()
@@ -127,6 +132,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._worker.moveToThread(self._thread)
         self._thread.start()
         self._worker.resultsReady.connect(self._apply_results)
+        self._worker.errorOccurred.connect(self._on_search_error)
         # Connect signal to worker (queued across threads)
         self.searchRequested.connect(self._worker.run_search)
         # Status messages from background threads
@@ -165,6 +171,10 @@ class MainWindow(QtWidgets.QMainWindow):
         )
         self.facets_panel.update_counts(counts, self._state.facets)
         self._status_label.setText(f"{len(rows)} results")
+
+    @QtCore.Slot(str)
+    def _on_search_error(self, message: str) -> None:
+        self._status_label.setText(message)
 
     def _on_facets_changed(self, sel: FacetSelection) -> None:
         self._state.facets = sel
@@ -221,6 +231,7 @@ class MainWindow(QtWidgets.QMainWindow):
         rem_btn.clicked.connect(remove_selected)
         if dlg.exec():
             self.settings.enable_ocr = ocr_cb.isChecked()
+            self.settings.watch_dirs = [str(p) for p in self.watch_dirs]
             try:
                 self.settings.save()
             except Exception:

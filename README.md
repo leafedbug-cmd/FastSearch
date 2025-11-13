@@ -22,12 +22,21 @@ Features (MVP)
 Configuration
 -------------
 
-Edit `fastsearch/config/defaults.toml` to set `watch_dirs`. You can also add directories from the UI (Settings button in the toolbar).
+Watch roots are resolved in this order:
+
+1. `FASTSEARCH_WATCH_DIRS` environment variable (path list separated by your OS path separator).
+2. The persistent `settings.json` that the Settings dialog writes (stored in the FastSearch user-data directory, see below).
+3. `fastsearch/config/defaults.toml` (`watch_dirs`, `exclude_dir_names`, `preview_max_bytes`).
+4. A heuristic fallback (Documents / Downloads / Desktop / Home).
+
+Use the Settings button in the toolbar to add/remove folders or toggle OCR; those choices are saved automatically.
 
 Folders & Files
 ---------------
 
-- Database lives at `fastsearch_data/fastsearch.db` by default (created on first run).
+- Data and settings live under the user data directory reported by `platformdirs` (e.g. `%LOCALAPPDATA%\FastSearch\FastSearch` on Windows, `~/Library/Application Support/FastSearch` on macOS, `~/.local/share/FastSearch` on Linux). Legacy `fastsearch_data/` folders are migrated automatically on launch.
+- Database: `<data_dir>/fastsearch.db`.
+- Settings: `<data_dir>/settings.json` (watch directories + OCR preference).
 - Logs are written to stdout (integrated logging config coming soon).
 
 Roadmap (next)

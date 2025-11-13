@@ -97,15 +97,20 @@ class PreviewPane(QtWidgets.QWidget):
                     from PIL import Image  # type: ignore
                 except Exception:
                     return "OCR unavailable: install Pillow."
-                img = Image.open(path)
-                text = pytesseract.image_to_string(img)
+                with Image.open(path) as img:
+                    text = pytesseract.image_to_string(img)
                 return text.strip() or "(No text detected)"
             except Exception as e:
                 return f"OCR failed: {e}"
 
         import threading
+        target_path = str(path)
+
         def done(result: str) -> None:
-            QtCore.QTimer.singleShot(0, lambda: self.text.setPlainText(result))
+            def apply() -> None:
+                if self._path == target_path:
+                    self.text.setPlainText(result)
+            QtCore.QTimer.singleShot(0, apply)
 
         threading.Thread(target=lambda: done(work()), daemon=True).start()
 

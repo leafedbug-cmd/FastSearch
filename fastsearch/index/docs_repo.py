@@ -91,7 +91,7 @@ class DocsRepo:
         cur = con.execute("INSERT INTO locations(path, initial_scan_complete, last_scan_ts, last_scan_count) VALUES(?, 0, 0, 0)", (path,))
         return int(cur.lastrowid)
 
-    def upsert_file(self, path: Path, root_locations: Sequence[Path]) -> Optional[int]:
+    def upsert_file(self, path: Path, root_locations: Sequence[Path], *, connection: sqlite3.Connection | None = None) -> Optional[int]:
         try:
             st = path.stat()
         except FileNotFoundError:
@@ -117,8 +117,16 @@ class DocsRepo:
         if location_path is None:
             location_path = parent
 
-        with self._connect() as con:
-            return self._upsert_file_with_con(con, path, root_locations, location_path, name, name_norm, parent, ext, st, ft, sb, mbucket)
+        con = connection or self._connect()
+        manage = connection is None
+        try:
+            doc_id = self._upsert_file_with_con(con, path, root_locations, location_path, name, name_norm, parent, ext, st, ft, sb, mbucket)
+            if manage:
+                con.commit()
+            return doc_id
+        finally:
+            if manage:
+                con.close()
 
     def _upsert_file_with_con(
         self,
@@ -225,96 +233,115 @@ class DocsRepo:
             params.append(path)
             con.execute(f"UPDATE locations SET {sets_sql} WHERE path=?", params)
 
-    def iter_paths_missing_content(self, roots: Sequence[Path], batch: int = 5000):
+    def iter_paths_missing_content(self, roots: Sequence[Path], batch: int = 5000) -> Iterable[List[Path]]:
         if not roots:
             return []
         root_strs = [str(p) for p in roots]
+        placeholders = ",".join(["?"] * len(root_strs))
+        sql = (
+            "SELECT docs.path FROM docs "
+            "LEFT JOIN content_fts ON content_fts.rowid = docs.id "
+            f"WHERE docs.deleted=0 AND content_fts.rowid IS NULL AND docs.location_id IN (SELECT id FROM locations WHERE path IN ({placeholders})) "
+            "LIMIT ? OFFSET ?"
+        )
         with self._connect() as con:
-            placeholders = ",".join(["?"] * len(root_strs))
-            sql = (
-                "SELECT docs.path FROM docs "
-                "LEFT JOIN content_fts ON content_fts.rowid = docs.id "
-                f"WHERE docs.deleted=0 AND content_fts.rowid IS NULL AND docs.location_id IN (SELECT id FROM locations WHERE path IN ({placeholders})) "
-                "LIMIT ?"
-            )
-            cur = con.execute(sql, (*root_strs, batch))
-            return [Path(r[0]) for r in cur.fetchall()]
+            offset = 0
+            while True:
+                cur = con.execute(sql, (*root_strs, batch, offset))
+                rows = cur.fetchall()
+                if not rows:
+                    break
+                yield [Path(r[0]) for r in rows]
+                offset += len(rows)
+
+
 
     def search(self, query: str, filters: SearchFilters, limit: int = 500, mode: str = "all") -> Tuple[List[sqlite3.Row], Dict[str, Dict[str, int]]]:
         q = (query or "").strip()
-        params: List[object] = []
+        filter_params: List[object] = []
 
-        # Filters
-        flt = ["docs.deleted=0"]
+        filter_clauses = ["docs.deleted=0"]
 
-        def add_in(field: str, values: Optional[Sequence[object]]):
-            nonlocal flt, params
+        def add_in(field: str, values: Optional[Sequence[object]]) -> None:
             if values:
                 if "." not in field:
                     field = f"docs.{field}"
                 placeholders = ",".join(["?"] * len(values))
-                flt.append(f"{field} IN ({placeholders})")
-                params.extend(values)
+                filter_clauses.append(f"{field} IN ({placeholders})")
+                filter_params.extend(values)
 
         add_in("filetype", filters.filetypes)
         add_in("size_bucket", filters.size_buckets)
         add_in("date_bucket", filters.date_buckets)
         add_in("location_id", filters.location_ids)
 
-        filter_sql = " AND ".join(flt) if flt else "1"
+        filter_sql = " AND ".join(filter_clauses) if filter_clauses else "1"
 
-        # Build candidate CTE
-        ctes: List[str] = []
-        cte_params: List[object] = []
+        candidate_selects: List[str] = []
+        candidate_params: List[object] = []
 
-        import re
-        def like_params(q: str) -> List[str]:
-            like = f"%{q.lower()}%"
+        def like_params(text: str) -> List[str]:
+            like = f"%{text.lower()}%"
             return [like, like]
 
         if q:
             if mode in ("filename", "all"):
-                ctes.append(
-                    f"SELECT id FROM docs WHERE {filter_sql} AND (LOWER(docs.name) LIKE ? OR LOWER(docs.path) LIKE ?)"
+                candidate_selects.append(
+                    "SELECT id FROM filtered_docs WHERE (LOWER(name) LIKE ? OR LOWER(path) LIKE ?)"
                 )
-                cte_params.extend(like_params(q))
+                candidate_params.extend(like_params(q))
             if mode in ("content", "all"):
                 from .fts import build_match_query
+
                 match = build_match_query(q)
                 if match:
-                    ctes.append(
-                        f"SELECT docs.id FROM content_fts JOIN docs ON docs.id=content_fts.rowid WHERE {filter_sql} AND content_fts MATCH ?"
+                    candidate_selects.append(
+                        "SELECT fd.id FROM content_fts "
+                        "JOIN filtered_docs fd ON fd.id = content_fts.rowid "
+                        "WHERE content_fts MATCH ?"
                     )
-                    cte_params.append(match)
+                    candidate_params.append(match)
         else:
-            # No query: candidates are just filtered docs
-            ctes.append(f"SELECT id FROM docs WHERE {filter_sql}")
+            candidate_selects.append("SELECT id FROM filtered_docs")
 
-        cte_sql = " UNION " .join(ctes)
+        candidate_sql = " UNION ".join(candidate_selects)
+        cte_clause = (
+            "WITH filtered_docs AS (SELECT * FROM docs WHERE "
+            f"{filter_sql}), "
+            f"candidate_ids AS ({candidate_sql}) "
+        )
+
         order_sql = (
-            "CASE WHEN LOWER(docs.name) LIKE ? THEN 0 ELSE 1 END, docs.mtime_ns DESC"
-            if q else "docs.mtime_ns DESC"
+            "CASE WHEN LOWER(fd.name) LIKE ? THEN 0 ELSE 1 END, fd.mtime_ns DESC"
+            if q
+            else "fd.mtime_ns DESC"
         )
         order_params: List[object] = [f"%{q.lower()}%"] if q else []
+        base_params = [*filter_params, *candidate_params]
 
         sql = (
-            "WITH candidate_ids AS (" + cte_sql + ") "
-            "SELECT docs.*, locations.path AS location_path "
-            "FROM docs JOIN candidate_ids ON candidate_ids.id = docs.id "
-            "LEFT JOIN locations ON locations.id = docs.location_id "
+            cte_clause
+            + "SELECT fd.*, locations.path AS location_path "
+            "FROM filtered_docs fd "
+            "JOIN candidate_ids ON candidate_ids.id = fd.id "
+            "LEFT JOIN locations ON locations.id = fd.location_id "
             f"ORDER BY {order_sql} LIMIT ?"
         )
 
         with self._connect() as con:
             con.execute("PRAGMA query_only=1")
-            rows = con.execute(sql, (*params, *cte_params, *order_params, limit)).fetchall()
+            rows = con.execute(sql, (*base_params, *order_params, limit)).fetchall()
 
             facets: Dict[str, Dict[str, int]] = {}
+
             def facet_counts(column: str) -> Dict[str, int]:
                 cur = con.execute(
-                    f"WITH candidate_ids AS (" + cte_sql + ") "
-                    f"SELECT {column}, COUNT(*) FROM docs JOIN candidate_ids ON candidate_ids.id = docs.id GROUP BY {column}",
-                    (*params, *cte_params),
+                    cte_clause
+                    + f"SELECT {column}, COUNT(*) "
+                    "FROM filtered_docs fd "
+                    "JOIN candidate_ids ON candidate_ids.id = fd.id "
+                    f"GROUP BY {column}",
+                    (*base_params,),
                 )
                 out: Dict[str, int] = {}
                 for r in cur.fetchall():
@@ -323,19 +350,19 @@ class DocsRepo:
                     out[key] = int(r[1])
                 return out
 
-            facets["filetype"] = facet_counts("filetype")
-            facets["size_bucket"] = facet_counts("size_bucket")
-            facets["date_bucket"] = facet_counts("date_bucket")
+            facets["filetype"] = facet_counts("fd.filetype")
+            facets["size_bucket"] = facet_counts("fd.size_bucket")
+            facets["date_bucket"] = facet_counts("fd.date_bucket")
 
-            # Locations (avoid huge IN lists by joining)
             loc_counts: Dict[str, int] = {}
             cur = con.execute(
-                "WITH candidate_ids AS (" + cte_sql + ") "
-                "SELECT locations.path, COUNT(*) "
-                "FROM docs JOIN candidate_ids ON candidate_ids.id = docs.id "
-                "JOIN locations ON locations.id = docs.location_id "
+                cte_clause
+                + "SELECT locations.path, COUNT(*) "
+                "FROM filtered_docs fd "
+                "JOIN candidate_ids ON candidate_ids.id = fd.id "
+                "JOIN locations ON locations.id = fd.location_id "
                 "GROUP BY locations.path",
-                (*params, *cte_params),
+                (*base_params,),
             )
             for r in cur.fetchall():
                 loc_counts[str(r[0])] = int(r[1])

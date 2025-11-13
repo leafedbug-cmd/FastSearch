@@ -1,8 +1,12 @@
 PySide6>=6.5
 watchdog>=3.0.0
-psutil>=5.9
 typer>=0.9
 platformdirs>=4.2
+Pillow>=10.0
+pypdf>=4.2
+
+[:platform_system == "Windows" or platform_system == "Linux" or platform_system == "Darwin"]
+pytesseract>=0.3.13
 
 [:python_version < "3.11"]
 tomli>=2.0

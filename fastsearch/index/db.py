@@ -1,17 +1,42 @@
 from __future__ import annotations
 
-import os
+import shutil
 import sqlite3
 from pathlib import Path
 
+try:
+    from platformdirs import user_data_dir
+except ModuleNotFoundError:  # pragma: no cover
+    def user_data_dir(app_name: str, app_author: str) -> str:
+        return str(Path.home() / f".{app_name.lower()}")
+
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-DATA_DIR = ROOT_DIR / "fastsearch_data"
+APP_NAME = "FastSearch"
+APP_AUTHOR = "FastSearch"
+DATA_DIR = Path(user_data_dir(APP_NAME, APP_AUTHOR))
+LEGACY_DATA_DIR = ROOT_DIR / "fastsearch_data"
 DB_PATH = DATA_DIR / "fastsearch.db"
 
 
 def ensure_data_dir() -> None:
+    _migrate_legacy_data_dir()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _migrate_legacy_data_dir() -> None:
+    if not LEGACY_DATA_DIR.exists():
+        return
+    DATA_DIR.parent.mkdir(parents=True, exist_ok=True)
+    if not DATA_DIR.exists():
+        shutil.move(str(LEGACY_DATA_DIR), str(DATA_DIR))
+        return
+    for item in LEGACY_DATA_DIR.iterdir():
+        target = DATA_DIR / item.name
+        if target.exists():
+            continue
+        shutil.move(str(item), str(target))
+    shutil.rmtree(LEGACY_DATA_DIR, ignore_errors=True)
 
 
 def connect(db_path: Path | str = DB_PATH) -> sqlite3.Connection:

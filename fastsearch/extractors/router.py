@@ -49,8 +49,8 @@ def extract_text_for_index(path: Path, settings: Optional[Settings] = None, max_
             except Exception:
                 return None
             try:
-                img = Image.open(path)
-                text = pytesseract.image_to_string(img)
+                with Image.open(path) as img:
+                    text = pytesseract.image_to_string(img)
                 return (text or "").strip() or None
             except Exception:
                 return None

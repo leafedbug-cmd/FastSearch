@@ -1,19 +1,22 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
-from pathlib import Path
 import os as _os
-from typing import List, Sequence
+from pathlib import Path
+from typing import List
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtWidgets
 
 from fastsearch.index.db import initialize
 from fastsearch.index.docs_repo import DocsRepo
 from fastsearch.service.watcher import WatchService, WatcherConfig, DEFAULT_EXCLUDES
 from fastsearch.service.indexer import ContentIndexer
-from fastsearch.config.settings import Settings
+from fastsearch.config.settings import (
+    Settings,
+    default_watch_dirs,
+    resolved_watch_dirs_from_settings,
+)
 from .views.main_window import MainWindow
 
 
@@ -33,12 +36,7 @@ def _load_env_watch_dirs() -> List[Path]:
     return paths
 
 
-def _load_default_watch_dirs() -> List[Path]:
-    # 1) Environment override
-    env = _load_env_watch_dirs()
-    if env:
-        return env
-    # 2) On Windows, suggest the system drive root if desired
+def _fallback_watch_dirs() -> List[Path]:
     try:
         if os.name == "nt":
             system_drive = os.environ.get("SystemDrive", "C:")
@@ -47,7 +45,6 @@ def _load_default_watch_dirs() -> List[Path]:
                 return [root]
     except Exception:
         pass
-    # 3) Fallback: user's Documents/Desktop/Downloads, then home
     home = Path.home()
     candidates = []
     for name in ("Documents", "Downloads", "Desktop"):
@@ -57,6 +54,22 @@ def _load_default_watch_dirs() -> List[Path]:
     if not candidates:
         candidates.append(home)
     return candidates
+
+
+def _resolve_watch_dirs(settings: Settings) -> List[Path]:
+    env = _load_env_watch_dirs()
+    if env:
+        return env
+
+    saved = resolved_watch_dirs_from_settings(settings)
+    if saved:
+        return saved
+
+    defaults = default_watch_dirs()
+    if defaults:
+        return defaults
+
+    return _fallback_watch_dirs()
 
 
 def run_gui() -> None:
@@ -79,7 +92,7 @@ def run_gui() -> None:
 
     repo = DocsRepo()
     settings = Settings.load()
-    watch_dirs = _load_default_watch_dirs()
+    watch_dirs = _resolve_watch_dirs(settings)
     # Speed: run content indexer with CPU-1 workers (at least 1)
     _cpu = _os.cpu_count() or 2
     _env_workers = _os.environ.get("FASTSEARCH_INDEXER_WORKERS")
@@ -87,7 +100,7 @@ def run_gui() -> None:
         _workers = max(1, int(_env_workers))
     else:
         _workers = max(1, min(4, _cpu - 1))
-    indexer = ContentIndexer(workers=_workers, settings=settings)
+    indexer = ContentIndexer(workers=_workers, settings=settings, roots=watch_dirs)
     log.info(f"Content indexer using {_workers} workers")
     indexer.start()
     watcher = WatchService(repo, WatcherConfig(roots=watch_dirs, exclude_dir_names={s.lower() for s in DEFAULT_EXCLUDES}), indexer=indexer)

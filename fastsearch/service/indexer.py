@@ -3,20 +3,23 @@ from __future__ import annotations
 import threading
 from queue import Queue, Empty
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 from fastsearch.extractors.router import extract_text_for_index
-from fastsearch.index.db import connect
 from fastsearch.index.fts import upsert_doc_content, delete_doc_content
 
 
 class ContentIndexer:
-    def __init__(self, workers: int = 2, settings=None) -> None:
+    def __init__(self, workers: int = 2, *, roots: Sequence[Path] | None = None, settings=None) -> None:
         self.q: Queue[Path] = Queue(maxsize=10000)
         self._threads: list[threading.Thread] = []
         self._stop = threading.Event()
         self._workers = max(1, workers)
         self._settings = settings
+        self._roots: tuple[Path, ...] | None = tuple(roots) if roots else None
+
+    def set_roots(self, roots: Sequence[Path]) -> None:
+        self._roots = tuple(roots)
 
     def start(self) -> None:
         if self._threads:
@@ -40,6 +43,9 @@ class ContentIndexer:
         except Exception:
             pass
 
+    def queue_size(self) -> int:
+        return self.q.qsize()
+
     def _run(self) -> None:
         while not self._stop.is_set():
             try:
@@ -51,7 +57,8 @@ class ContentIndexer:
                     continue
                 from fastsearch.index.docs_repo import DocsRepo
                 repo = DocsRepo()
-                doc_id = repo.upsert_file(p, [p.parent])
+                roots = self._roots if self._roots else (p.parent,)
+                doc_id = repo.upsert_file(p, roots)
                 if not doc_id:
                     continue
                 text = extract_text_for_index(p, self._settings)

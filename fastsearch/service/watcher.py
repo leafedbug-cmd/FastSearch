@@ -10,6 +10,7 @@ from typing import Callable, Iterable, List, Sequence, Set
 from watchdog.events import FileSystemEventHandler, FileSystemEvent
 from watchdog.observers import Observer
 
+from fastsearch.config.settings import default_exclude_names
 from fastsearch.index.docs_repo import DocsRepo
 from .indexer import ContentIndexer
 
@@ -17,7 +18,8 @@ from .indexer import ContentIndexer
 log = logging.getLogger(__name__)
 
 
-DEFAULT_EXCLUDES = {".git", "node_modules", "venv", ".venv", "__pycache__", ".idea", ".vscode"}
+_BASE_EXCLUDES = [".git", "node_modules", "venv", ".venv", "__pycache__", ".idea", ".vscode"]
+DEFAULT_EXCLUDES = default_exclude_names(_BASE_EXCLUDES) or {name.lower() for name in _BASE_EXCLUDES}
 
 
 @dataclass
@@ -51,6 +53,8 @@ class _Handler(FileSystemEventHandler):
             self.indexer.enqueue(p)
 
     def on_moved(self, event):  # type: ignore[override]
+        if event.is_directory:
+            return
         if getattr(event, "dest_path", None):
             p = Path(event.dest_path)
             self.repo.upsert_file(p, self.roots)
@@ -73,6 +77,7 @@ class WatchService:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._on_status: Callable[[str], None] | None = None
+        self._last_queue_depth: int = -1
 
     def on_status(self, fn: Callable[[str], None]) -> None:
         self._on_status = fn
@@ -82,27 +87,52 @@ class WatchService:
         if self._on_status:
             self._on_status(msg)
 
+    def _emit_queue_status(self) -> None:
+        if not self.indexer:
+            return
+        depth = self.indexer.queue_size()
+        if depth == self._last_queue_depth:
+            return
+        self._last_queue_depth = depth
+        self._emit_status(f"Content indexing queue depth: {depth}")
+
     def _scan_root(self, root: Path) -> None:
         scanned = 0
         self._emit_status(f"Indexing {root}…")
         # ensure progress entry exists
         self.repo.update_location_scan_state(str(root), complete=False, last_scan_count=0)
-        for dirpath, dirnames, filenames in os_walk_filtered(root, self.cfg.exclude_dir_names):
-            for fn in filenames:
-                p = Path(dirpath) / fn
-                self.repo.upsert_file(p, self.cfg.roots)
-                if self.indexer:
-                    self.indexer.enqueue(p)
-                scanned += 1
-                if scanned % 500 == 0:
-                    self.repo.update_location_scan_state(str(root), last_scan_count=scanned)
-                    self._emit_status(f"Indexing {root}… {scanned} files")
-                if self._stop_event.is_set():
-                    return
+        conn = self.repo._connect()
+        try:
+            for dirpath, dirnames, filenames in os_walk_filtered(root, self.cfg.exclude_dir_names):
+                for fn in filenames:
+                    p = Path(dirpath) / fn
+                    self.repo.upsert_file(p, self.cfg.roots, connection=conn)
+                    if self.indexer:
+                        self.indexer.enqueue(p)
+                    scanned += 1
+                    if scanned % 500 == 0:
+                        conn.commit()
+                        self.repo.update_location_scan_state(str(root), last_scan_count=scanned)
+                        self._emit_status(f"Indexing {root}… {scanned} files")
+                        self._emit_queue_status()
+                    if self._stop_event.is_set():
+                        conn.commit()
+                        self._emit_queue_status()
+                        return
+            conn.commit()
+            self._emit_queue_status()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
         self.repo.update_location_scan_state(str(root), complete=True, last_scan_count=scanned)
         self._emit_status(f"Indexing complete for {root} ({scanned} files)")
 
     def start(self) -> None:
+        if self.indexer:
+            self.indexer.set_roots(self.cfg.roots)
+        self._stop_event.clear()
         # Possibly skip scanning completed roots; resume incomplete ones
         to_scan: List[Path] = []
         for root in self.cfg.roots:
@@ -121,11 +151,16 @@ class WatchService:
         # Enqueue any docs missing content for background indexing
         try:
             if self.indexer:
-                missing = self.repo.iter_paths_missing_content(self.cfg.roots, batch=5000)
-                for p in missing:
-                    self.indexer.enqueue(p)
-                if missing:
-                    self._emit_status(f"Queueing content index for {len(missing)} files…")
+                missing_total = 0
+                for batch in self.repo.iter_paths_missing_content(self.cfg.roots, batch=5000) or []:
+                    if not batch:
+                        continue
+                    missing_total += len(batch)
+                    for p in batch:
+                        self.indexer.enqueue(p)
+                    self._emit_queue_status()
+                if missing_total:
+                    self._emit_status(f"Queueing content index for {missing_total} files…")
         except Exception:
             pass
 
@@ -157,6 +192,12 @@ class WatchService:
                 ob.join(timeout=2.0)
             except Exception:
                 pass
+        self._observers.clear()
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=5.0)
+        self._thread = None
+        self._stop_event = threading.Event()
+        self._last_queue_depth = -1
 
 
 def os_walk_filtered(root: Path, exclude_dir_names: Set[str]):

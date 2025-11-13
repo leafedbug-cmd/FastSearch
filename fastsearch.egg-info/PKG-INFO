@@ -6,10 +6,12 @@ Requires-Python: >=3.10
 Description-Content-Type: text/markdown
 Requires-Dist: PySide6>=6.5
 Requires-Dist: watchdog>=3.0.0
-Requires-Dist: psutil>=5.9
 Requires-Dist: typer>=0.9
 Requires-Dist: platformdirs>=4.2
 Requires-Dist: tomli>=2.0; python_version < "3.11"
+Requires-Dist: pytesseract>=0.3.13; platform_system == "Windows" or platform_system == "Linux" or platform_system == "Darwin"
+Requires-Dist: Pillow>=10.0
+Requires-Dist: pypdf>=4.2
 
 FastSearch (MVP)
 ================
@@ -30,16 +32,26 @@ Features (MVP)
 - Blazing-fast filename/path search using SQLite with tuned PRAGMAs.
 - Faceted filters: File Type, Size, Date Modified, Location.
 - Polished PySide6 UI with a results table and preview pane.
+- Optional OCR for image previews (toggle in Settings). Requires Tesseract OCR installed and available on PATH.
 
 Configuration
 -------------
 
-Edit `fastsearch/config/defaults.toml` to set `watch_dirs`. You can also add directories from the UI (Settings button in the toolbar).
+Watch roots are resolved in this order:
+
+1. `FASTSEARCH_WATCH_DIRS` environment variable (path list separated by your OS path separator).
+2. The persistent `settings.json` that the Settings dialog writes (stored in the FastSearch user-data directory, see below).
+3. `fastsearch/config/defaults.toml` (`watch_dirs`, `exclude_dir_names`, `preview_max_bytes`).
+4. A heuristic fallback (Documents / Downloads / Desktop / Home).
+
+Use the Settings button in the toolbar to add/remove folders or toggle OCR; those choices are saved automatically.
 
 Folders & Files
 ---------------
 
-- Database lives at `fastsearch_data/fastsearch.db` by default (created on first run).
+- Data and settings live under the user data directory reported by `platformdirs` (e.g. `%LOCALAPPDATA%\FastSearch\FastSearch` on Windows, `~/Library/Application Support/FastSearch` on macOS, `~/.local/share/FastSearch` on Linux). Legacy `fastsearch_data/` folders are migrated automatically on launch.
+- Database: `<data_dir>/fastsearch.db`.
+- Settings: `<data_dir>/settings.json` (watch directories + OCR preference).
 - Logs are written to stdout (integrated logging config coming soon).
 
 Roadmap (next)
@@ -47,6 +59,5 @@ Roadmap (next)
 
 - Full-text indexing (FTS5) and content extraction.
 - Semantic search with local embeddings.
-- OCR for images and PDFs.
+- OCR for PDFs + content indexing.
 - Background service packaging (Windows service / LaunchAgent / systemd).
-
